@@ -17,7 +17,7 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create-drop  # Per ora, crea le tabelle automaticamente
     show-sql: true
   h2:
     console:
