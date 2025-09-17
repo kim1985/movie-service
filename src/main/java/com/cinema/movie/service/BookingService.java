@@ -3,6 +3,8 @@ package com.cinema.movie.service;
 import com.cinema.movie.dto.BookingRequest;
 import com.cinema.movie.dto.BookingResponse;
 import com.cinema.movie.entity.Booking;
+import com.cinema.movie.entity.domain.BookingDomainService;
+import com.cinema.movie.entity.domain.ScreeningDomainService;
 import com.cinema.movie.repository.BookingRepository;
 import com.cinema.movie.service.booking.BookingFactory;
 import com.cinema.movie.service.booking.BookingValidator;
@@ -20,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Service principale per gestione prenotazioni.
- * Ora più semplice - delega responsabilità ai collaboratori.
+ * Usa Domain Services per business logic invece delle entity.
  */
 @Service
 @Slf4j
@@ -32,10 +34,10 @@ public class BookingService {
     private final BookingValidator bookingValidator;
     private final DistributedLockManager lockManager;
 
-    /**
-     * Crea prenotazione con Virtual Threads.
-     * Template Method pattern: delega step specifici.
-     */
+    // Domain Services per business logic
+    private final BookingDomainService bookingDomainService;
+    private final ScreeningDomainService screeningDomainService;
+
     @Async("virtualThreadExecutor")
     @Transactional
     public CompletableFuture<BookingResponse> createBookingAsync(BookingRequest request) {
@@ -50,9 +52,6 @@ public class BookingService {
         );
     }
 
-    /**
-     * Template Method: processo booking con step chiari.
-     */
     private BookingResponse processBooking(BookingRequest request) {
         // 1. Valida e recupera dati
         var screening = bookingValidator.validateAndGetScreening(request);
@@ -87,9 +86,9 @@ public class BookingService {
 
         bookingValidator.validateCancellation(booking, userEmail);
 
-        // Business logic nell'entity
-        booking.cancel();
-        booking.getScreening().releaseSeats(booking.getNumberOfSeats());
+        // Usa Domain Service invece della business logic nell'entity
+        bookingDomainService.cancelBooking(booking);
+        screeningDomainService.releaseSeats(booking.getScreening(), booking.getNumberOfSeats());
 
         var cancelled = bookingRepository.save(booking);
         log.info("Prenotazione cancellata: {}", bookingId);

@@ -4,6 +4,7 @@ import com.cinema.movie.dto.BookingRequest;
 import com.cinema.movie.entity.Booking;
 import com.cinema.movie.entity.BookingStatus;
 import com.cinema.movie.entity.Screening;
+import com.cinema.movie.entity.domain.BookingDomainService;
 import com.cinema.movie.repository.ScreeningRepository;
 import com.cinema.movie.exception.BookingException;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 public class BookingFactory {
 
     private final ScreeningRepository screeningRepository;
+    private final BookingDomainService bookingDomainService;
 
     public Booking createBooking(BookingRequest request, Screening screening) {
         // Aggiorna posti atomicamente
@@ -33,7 +35,7 @@ public class BookingFactory {
             throw new BookingException("Posti non più disponibili");
         }
 
-        // Crea booking entity
+        // Crea booking entity (solo data holder)
         var booking = new Booking();
         booking.setScreening(screening);
         booking.setUserEmail(request.userEmail());
@@ -42,8 +44,8 @@ public class BookingFactory {
         booking.setStatus(BookingStatus.PENDING);
         booking.setCreatedAt(LocalDateTime.now());
 
-        // Usa business logic dell'entity
-        booking.confirm();
+        // Usa Domain Service per business logic invece del metodo nell'entity
+        bookingDomainService.confirmBooking(booking);
 
         return booking;
     }

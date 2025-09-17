@@ -5,6 +5,7 @@ import com.cinema.movie.entity.Booking;
 import com.cinema.movie.entity.BookingStatus;
 import com.cinema.movie.entity.Movie;
 import com.cinema.movie.entity.Screening;
+import com.cinema.movie.entity.domain.BookingDomainService;
 import com.cinema.movie.repository.ScreeningRepository;
 import com.cinema.movie.exception.BookingException;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,8 @@ import static org.mockito.Mockito.*;
 class BookingFactoryTest {
 
     @Mock private ScreeningRepository screeningRepository;
+    @Mock private BookingDomainService bookingDomainService;
+
     @InjectMocks private BookingFactory bookingFactory;
 
     @Test
@@ -32,6 +35,7 @@ class BookingFactoryTest {
         var screening = createTestScreening();
 
         when(screeningRepository.reserveSeatsAtomically(1L, 2)).thenReturn(1);
+        doNothing().when(bookingDomainService).confirmBooking(any(Booking.class));
 
         // When
         Booking result = bookingFactory.createBooking(request, screening);
@@ -41,8 +45,9 @@ class BookingFactoryTest {
         assertEquals("test@email.com", result.getUserEmail());
         assertEquals(2, result.getNumberOfSeats());
         assertEquals(BigDecimal.valueOf(20.0), result.getTotalPrice());
-        assertEquals(BookingStatus.CONFIRMED, result.getStatus());
+        assertEquals(BookingStatus.PENDING, result.getStatus()); // Prima della conferma
         verify(screeningRepository).reserveSeatsAtomically(1L, 2);
+        verify(bookingDomainService).confirmBooking(result);
     }
 
     @Test
@@ -57,6 +62,7 @@ class BookingFactoryTest {
         assertThrows(BookingException.class,
                 () -> bookingFactory.createBooking(request, screening));
         verify(screeningRepository).reserveSeatsAtomically(1L, 2);
+        verify(bookingDomainService, never()).confirmBooking(any());
     }
 
     private Screening createTestScreening() {

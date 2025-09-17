@@ -51,20 +51,4 @@ public class Screening {
             availableSeats = totalSeats;
         }
     }
-
-    // Metodo business per aggiornare posti disponibili
-    public boolean hasAvailableSeats(int requestedSeats) {
-        return availableSeats >= requestedSeats;
-    }
-
-    public void reserveSeats(int seats) {
-        if (!hasAvailableSeats(seats)) {
-            throw new IllegalArgumentException("Not enough available seats");
-        }
-        this.availableSeats -= seats;
-    }
-
-    public void releaseSeats(int seats) {
-        this.availableSeats = Math.min(totalSeats, availableSeats + seats);
-    }
 }

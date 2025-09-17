@@ -6,6 +6,8 @@ import com.cinema.movie.entity.Booking;
 import com.cinema.movie.entity.BookingStatus;
 import com.cinema.movie.entity.Movie;
 import com.cinema.movie.entity.Screening;
+import com.cinema.movie.entity.domain.BookingDomainService;
+import com.cinema.movie.entity.domain.ScreeningDomainService;
 import com.cinema.movie.repository.BookingRepository;
 import com.cinema.movie.service.booking.BookingFactory;
 import com.cinema.movie.service.booking.BookingValidator;
@@ -19,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -33,6 +36,10 @@ class BookingServiceTest {
     @Mock private BookingFactory bookingFactory;
     @Mock private BookingValidator bookingValidator;
     @Mock private DistributedLockManager lockManager;
+
+    // Nuovi mock per Domain Services
+    @Mock private BookingDomainService bookingDomainService;
+    @Mock private ScreeningDomainService screeningDomainService;
 
     @InjectMocks private BookingService bookingService;
 
@@ -94,6 +101,22 @@ class BookingServiceTest {
     }
 
     @Test
+    void testGetUserBookings() {
+        // Given
+        var bookings = List.of(createTestBooking());
+        when(bookingRepository.findByUserEmailOrderByCreatedAtDesc("test@email.com"))
+                .thenReturn(bookings);
+
+        // When
+        List<BookingResponse> result = bookingService.getUserBookings("test@email.com");
+
+        // Then
+        assertEquals(1, result.size());
+        assertEquals("test@email.com", result.getFirst().userEmail());
+        verify(bookingRepository).findByUserEmailOrderByCreatedAtDesc("test@email.com");
+    }
+
+    @Test
     void testCancelBooking() {
         // Given
         var booking = createTestBooking();
@@ -101,6 +124,11 @@ class BookingServiceTest {
 
         when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
         doNothing().when(bookingValidator).validateCancellation(booking, "test@email.com");
+
+        // Mock Domain Services - non più business logic nell'entity
+        doNothing().when(bookingDomainService).cancelBooking(booking);
+        doNothing().when(screeningDomainService).releaseSeats(any(Screening.class), eq(2));
+
         when(bookingRepository.save(booking)).thenReturn(booking);
 
         // When
@@ -109,6 +137,11 @@ class BookingServiceTest {
         // Then
         assertNotNull(result);
         verify(bookingValidator).validateCancellation(booking, "test@email.com");
+
+        // Verifica interazione con Domain Services invece delle entity
+        verify(bookingDomainService).cancelBooking(booking);
+        verify(screeningDomainService).releaseSeats(booking.getScreening(), 2);
+
         verify(bookingRepository).save(booking);
     }
 
@@ -121,6 +154,10 @@ class BookingServiceTest {
         assertThrows(BookingException.class,
                 () -> bookingService.cancelBooking(1L, "test@email.com"));
         verify(bookingRepository).findById(1L);
+
+        // Domain Services non dovrebbero essere chiamati
+        verify(bookingDomainService, never()).cancelBooking(any());
+        verify(screeningDomainService, never()).releaseSeats(any(), anyInt());
     }
 
     private Screening createTestScreening() {

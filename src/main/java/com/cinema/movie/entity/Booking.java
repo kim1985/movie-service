@@ -44,41 +44,13 @@ public class Booking {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
         if (status == null) {
             status = BookingStatus.PENDING;
         }
     }
 
-    // Java 21 Pattern Matching per messaggi di stato
-    public String getStatusMessage() {
-        return switch (status) {
-            case PENDING -> "Prenotazione in corso...";
-            case CONFIRMED -> "Prenotazione confermata!";
-            case CANCELLED -> "Prenotazione cancellata";
-            case EXPIRED -> "Prenotazione scaduta";
-        };
-    }
-
-    // Metodi business
-    public void confirm() {
-        if (status != BookingStatus.PENDING) {
-            throw new IllegalStateException("Can only confirm pending bookings");
-        }
-        this.status = BookingStatus.CONFIRMED;
-        this.confirmedAt = LocalDateTime.now();
-    }
-
-    public void cancel() {
-        if (status == BookingStatus.CONFIRMED || status == BookingStatus.PENDING) {
-            this.status = BookingStatus.CANCELLED;
-        } else {
-            throw new IllegalStateException("Cannot cancel booking in status: " + status);
-        }
-    }
-
-    public boolean canBeCancelled() {
-        return status == BookingStatus.CONFIRMED || status == BookingStatus.PENDING;
-    }
 }
 
