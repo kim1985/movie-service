@@ -162,16 +162,105 @@ public class BookingService {
 }
 ```
 
-## Performance Mission-Critical
+## Configurazioni Mission-Critical
 
-### Gestione Alta Concorrenza
+### VirtualThreadConfig.java - Java 21 Concorrenza
 ```java
-// 1000 richieste simultanee gestite da Virtual Threads
-for i in {1..1000}; do
-curl -X POST http://localhost:8080/api/bookings/async \
-        -H "Content-Type: application/json" \
-        -d "{\"screeningId\": 1, \"userEmail\": \"user$i@test.com\", \"numberOfSeats\": 1}" &
-done
+@Configuration
+@EnableAsync
+public class VirtualThreadConfig implements AsyncConfigurer {
+    
+    @Bean("virtualThreadExecutor")
+    public Executor virtualThreadExecutor() {
+        return Executors.newVirtualThreadPerTaskExecutor(); // Java 21 feature
+    }
+}
+```
+
+**A cosa serve:**
+- **Alta concorrenza**: gestisce 1000+ richieste simultanee
+- **Overhead minimo**: ~1KB per Virtual Thread vs ~2MB thread tradizionali
+- **Performance**: context switching più veloce per I/O intensive operations
+
+**Come viene usata:**
+```java
+@Async("virtualThreadExecutor")
+public CompletableFuture<BookingResponse> createBookingAsync(BookingRequest request) {
+    // Ogni richiesta ottiene un Virtual Thread dedicato
+    return CompletableFuture.supplyAsync(() -> createBooking(request));
+}
+```
+
+**Perché è necessaria:**
+Nel scenario mission-critical, 1000 persone prenotano simultaneamente. I thread tradizionali limiterebbero la concorrenza, mentre Virtual Threads permettono di gestire tutte le richieste senza degradazione delle performance.
+
+### RedisConfig.java - Distributed Locking
+```java
+@Configuration
+public class RedisConfig {
+    
+    @Bean
+    public RedisTemplate<String, String> redisTemplate(RedisConnectionFactory factory) {
+        // Configurazione per operazioni atomiche di locking
+        RedisTemplate<String, String> template = new RedisTemplate<>();
+        template.setConnectionFactory(factory);
+        template.setKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(new StringRedisSerializer());
+        return template;
+    }
+}
+```
+
+**A cosa serve:**
+- **Race condition prevention**: solo una richiesta alla volta può prenotare posti per una proiezione
+- **Consistency**: garantisce che non vengano venduti più biglietti dei posti disponibili
+- **Coordinazione distribuita**: funziona anche con multiple istanze dell'applicazione
+
+**Come viene usata:**
+```java
+@Component
+public class DistributedLockManager {
+    
+    public <T> T executeWithLock(Long screeningId, Supplier<T> operation) {
+        String lockKey = "booking:lock:screening:" + screeningId;
+        String lockToken = UUID.randomUUID().toString();
+        
+        // Acquisisce lock atomicamente
+        Boolean acquired = redisTemplate.opsForValue()
+                .setIfAbsent(lockKey, lockToken, Duration.ofSeconds(30));
+                
+        if (!acquired) {
+            throw new BookingException("Sistema occupato, riprova tra poco");
+        }
+        
+        try {
+            return operation.get(); // Esegue operazione protetta
+        } finally {
+            // Rilascia lock con script Lua atomico
+            releaseLock(lockKey, lockToken);
+        }
+    }
+}
+```
+
+**Perché è necessaria:**
+Senza distributed locking, 1000 richieste simultanee per gli ultimi 10 posti causerebbero overbooking. Redis garantisce che solo una richiesta alla volta possa modificare i posti disponibili.
+
+### Integrazione Sistema Mission-Critical
+
+```java
+@Service
+public class BookingService {
+    
+    @Async("virtualThreadExecutor")  // ← VirtualThreadConfig
+    @Transactional
+    public CompletableFuture<BookingResponse> createBookingAsync(BookingRequest request) {
+        return lockManager.executeWithLock(  // ← RedisConfig
+                request.screeningId(),
+                () -> processBooking(request)
+        );
+    }
+}
 ```
 
 ### Atomic Database Operations
@@ -186,13 +275,12 @@ done
 int reserveSeatsAtomically(@Param("screeningId") Long screeningId, @Param("seats") int seats);
 ```
 
-### Redis Distributed Locking
-```java
-// Previene overbooking in ambiente distribuito
-String lockKey = "booking:lock:screening:" + screeningId;
-Boolean acquired = redisTemplate.opsForValue()
-        .setIfAbsent(lockKey, lockToken, Duration.ofSeconds(30));
-```
+**Flusso completo:**
+1. **Virtual Thread** gestisce la richiesta asincrona (alta concorrenza)
+2. **Redis Lock** previene race conditions (consistency)
+3. **Atomic DB operation** aggiorna posti disponibili
+4. **Domain Services** applicano business logic
+5. **Virtual Thread** completa senza bloccare altri thread
 
 ## Tecnologie e Versioni
 
